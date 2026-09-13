@@ -1,0 +1,16 @@
+# Personal calorie and weight data
+data/*.csv
+
+# R session files
+.Rhistory
+.RData
+.Ruserdata
+
+# RStudio files
+.Rproj.user/
+
+# Environment/authentication files
+.Renviron
+
+# macOS
+.DS_Store
