@@ -1,0 +1,587 @@
+---
+title: "Calorie & Weight Tracker"
+author: "Akeem Lawrence"
+date: "2025-04-28"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+---
+
+# Overview
+
+This project is an interactive calorie and weight tracker built in R.
+
+The tracker allows a user to:
+
+- Log meals and calorie intake
+- Log body weight
+- Save tracking data between R sessions
+- View daily calorie and weight summaries
+- Review historical logs
+- Visualize calorie intake over time
+- Visualize body-weight trends
+- Optionally export tracking data to Google Sheets
+
+Personal calorie and weight data are stored locally and can be excluded from version control when the project is published to GitHub.
+
+# Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+
+# Create the local data directory if it does not exist
+data_dir <- "data"
+
+if (!dir.exists(data_dir)) {
+  dir.create(
+    data_dir,
+    recursive = TRUE,
+    showWarnings = FALSE
+  )
+}
+
+# Define file locations
+calorie_file <- file.path(
+  data_dir,
+  "calorie_log.csv"
+)
+
+weight_file <- file.path(
+  data_dir,
+  "weight_log.csv"
+)
+```
+
+# Load Tracking Data
+
+When the tracker starts, existing calorie and weight records are loaded from local CSV files.
+
+If no files exist yet, empty tracking tables are created automatically.
+
+```{r load-data}
+if (file.exists(calorie_file)) {
+
+  calorie_log <- read_csv(
+    calorie_file,
+    show_col_types = FALSE
+  ) %>%
+    mutate(Date = as.Date(Date))
+
+} else {
+
+  calorie_log <- tibble(
+    Date = as.Date(character()),
+    Food = character(),
+    Calories = numeric()
+  )
+}
+
+if (file.exists(weight_file)) {
+
+  weight_log <- read_csv(
+    weight_file,
+    show_col_types = FALSE
+  ) %>%
+    mutate(Date = as.Date(Date))
+
+} else {
+
+  weight_log <- tibble(
+    Date = as.Date(character()),
+    Weight = numeric()
+  )
+}
+```
+
+# Save Tracking Data
+
+This function saves calorie and weight entries to local CSV files.
+
+```{r save-data}
+save_logs <- function() {
+
+  # Ensure the data directory exists before attempting to save
+  if (!dir.exists(data_dir)) {
+    dir.create(
+      data_dir,
+      recursive = TRUE,
+      showWarnings = FALSE
+    )
+  }
+
+  write_csv(
+    calorie_log,
+    calorie_file
+  )
+
+  write_csv(
+    weight_log,
+    weight_file
+  )
+}
+```
+
+# Daily Summary
+
+The daily summary calculates total calories logged for the current day and displays the most recent weight entry, if one is available.
+
+```{r daily-summary}
+show_summary <- function() {
+
+  today_date <- Sys.Date()
+
+  todays_meals <- calorie_log %>%
+    filter(Date == today_date)
+
+  todays_total_calories <- sum(
+    todays_meals$Calories,
+    na.rm = TRUE
+  )
+
+  todays_weight <- weight_log %>%
+    filter(Date == today_date)
+
+  cat("\n")
+  cat("=================================\n")
+  cat("        DAILY SUMMARY\n")
+  cat("=================================\n")
+
+  cat(
+    "Date:",
+    format(today_date, "%B %d, %Y"),
+    "\n"
+  )
+
+  cat(
+    "Calories logged:",
+    todays_total_calories,
+    "kcal\n"
+  )
+
+  cat(
+    "Meals logged:",
+    nrow(todays_meals),
+    "\n"
+  )
+
+  if (nrow(todays_weight) > 0) {
+
+    latest_weight <- tail(
+      todays_weight$Weight,
+      1
+    )
+
+    cat(
+      "Latest weight:",
+      latest_weight,
+      "lbs\n"
+    )
+
+  } else {
+
+    cat(
+      "Weight: No weight logged today\n"
+    )
+  }
+
+  cat("=================================\n\n")
+}
+```
+
+# Log a Meal
+
+The meal logger records the current date, food or meal description, and calorie amount. The entry is immediately saved to the local calorie log.
+
+```{r log-meal}
+log_meal <- function() {
+
+  food <- trimws(
+    readline(
+      "Enter food or meal: "
+    )
+  )
+
+  if (food == "") {
+
+    cat(
+      "Food name cannot be empty.\n"
+    )
+
+    return()
+  }
+
+  calories <- suppressWarnings(
+    as.numeric(
+      readline(
+        "Enter calories: "
+      )
+    )
+  )
+
+  if (
+    is.na(calories) ||
+    calories < 0
+  ) {
+
+    cat(
+      "Please enter a valid calorie amount.\n"
+    )
+
+    return()
+  }
+
+  new_entry <- tibble(
+    Date = Sys.Date(),
+    Food = food,
+    Calories = calories
+  )
+
+  calorie_log <<- bind_rows(
+    calorie_log,
+    new_entry
+  )
+
+  save_logs()
+
+  cat(
+    "\nMeal logged successfully.\n"
+  )
+
+  show_summary()
+}
+```
+
+# Log Body Weight
+
+The weight logger records the user's current body weight and saves the value to the weight history.
+
+```{r log-weight}
+log_weight <- function() {
+
+  weight <- suppressWarnings(
+    as.numeric(
+      readline(
+        "Enter weight in pounds: "
+      )
+    )
+  )
+
+  if (
+    is.na(weight) ||
+    weight <= 0
+  ) {
+
+    cat(
+      "Please enter a valid weight.\n"
+    )
+
+    return()
+  }
+
+  new_entry <- tibble(
+    Date = Sys.Date(),
+    Weight = weight
+  )
+
+  weight_log <<- bind_rows(
+    weight_log,
+    new_entry
+  )
+
+  save_logs()
+
+  cat(
+    "\nWeight logged successfully.\n"
+  )
+
+  show_summary()
+}
+```
+
+# View Historical Logs
+
+These functions allow the user to review previously recorded calorie and weight entries.
+
+```{r view-logs}
+view_calorie_log <- function() {
+
+  if (nrow(calorie_log) == 0) {
+
+    cat(
+      "No calorie data has been logged yet.\n"
+    )
+
+    return()
+  }
+
+  print(
+    calorie_log %>%
+      arrange(desc(Date))
+  )
+}
+
+
+view_weight_log <- function() {
+
+  if (nrow(weight_log) == 0) {
+
+    cat(
+      "No weight data has been logged yet.\n"
+    )
+
+    return()
+  }
+
+  print(
+    weight_log %>%
+      arrange(desc(Date))
+  )
+}
+```
+
+# Visualize Calorie Intake
+
+Daily calorie totals are aggregated and visualized over time.
+
+```{r calorie-plot}
+plot_calories <- function() {
+
+  if (nrow(calorie_log) == 0) {
+
+    cat(
+      "No calorie data available to plot.\n"
+    )
+
+    return()
+  }
+
+  daily_calories <- calorie_log %>%
+    group_by(Date) %>%
+    summarise(
+      Daily_Calories = sum(
+        Calories,
+        na.rm = TRUE
+      ),
+      .groups = "drop"
+    )
+
+  calorie_plot <- ggplot(
+    daily_calories,
+    aes(
+      x = Date,
+      y = Daily_Calories
+    )
+  ) +
+    geom_line() +
+    geom_point(size = 2) +
+    labs(
+      title = "Daily Calorie Intake",
+      x = "Date",
+      y = "Calories"
+    ) +
+    theme_minimal()
+
+  print(calorie_plot)
+}
+```
+
+# Visualize Weight Trends
+
+Body-weight entries are visualized chronologically to show changes over time.
+
+```{r weight-plot}
+plot_weight <- function() {
+
+  if (nrow(weight_log) == 0) {
+
+    cat(
+      "No weight data available to plot.\n"
+    )
+
+    return()
+  }
+
+  weight_plot <- ggplot(
+    weight_log,
+    aes(
+      x = Date,
+      y = Weight
+    )
+  ) +
+    geom_line() +
+    geom_point(size = 2) +
+    labs(
+      title = "Body Weight Over Time",
+      x = "Date",
+      y = "Weight (lbs)"
+    ) +
+    theme_minimal()
+
+  print(weight_plot)
+}
+```
+
+# Optional Google Sheets Export
+
+Tracking data can optionally be exported to Google Sheets.
+
+Google authentication is only triggered when this function is intentionally run.
+
+```{r google-sheets-export}
+export_to_google_sheets <- function() {
+
+  if (
+    !requireNamespace(
+      "googlesheets4",
+      quietly = TRUE
+    )
+  ) {
+
+    cat(
+      paste0(
+        "Install googlesheets4 first with:\n",
+        'install.packages("googlesheets4")\n'
+      )
+    )
+
+    return()
+  }
+
+  googlesheets4::gs4_auth()
+
+  sheet_name <- paste0(
+    "Calorie and Weight Tracker - ",
+    Sys.Date()
+  )
+
+  sheet <- googlesheets4::gs4_create(
+    sheet_name
+  )
+
+  googlesheets4::sheet_write(
+    calorie_log,
+    ss = sheet,
+    sheet = "Calorie Log"
+  )
+
+  googlesheets4::sheet_write(
+    weight_log,
+    ss = sheet,
+    sheet = "Weight Log"
+  )
+
+  cat(
+    "\nData exported to Google Sheets successfully.\n"
+  )
+}
+```
+
+# Interactive Tracker
+
+The main application provides a menu for entering data, viewing summaries, reviewing historical records, visualizing trends, and exporting data.
+
+```{r tracker-app}
+run_tracker <- function() {
+
+  repeat {
+
+    cat("\n")
+    cat("=================================\n")
+    cat("     CALORIE & WEIGHT TRACKER\n")
+    cat("=================================\n")
+    cat("1: Log Meal\n")
+    cat("2: Log Weight\n")
+    cat("3: View Daily Summary\n")
+    cat("4: View Calorie Log\n")
+    cat("5: View Weight Log\n")
+    cat("6: Plot Calories\n")
+    cat("7: Plot Weight\n")
+    cat("8: Export to Google Sheets\n")
+    cat("9: Exit\n")
+    cat("=================================\n")
+
+    choice <- readline(
+      "Enter choice: "
+    )
+
+    if (choice == "1") {
+
+      log_meal()
+
+    } else if (choice == "2") {
+
+      log_weight()
+
+    } else if (choice == "3") {
+
+      show_summary()
+
+    } else if (choice == "4") {
+
+      view_calorie_log()
+
+    } else if (choice == "5") {
+
+      view_weight_log()
+
+    } else if (choice == "6") {
+
+      plot_calories()
+
+    } else if (choice == "7") {
+
+      plot_weight()
+
+    } else if (choice == "8") {
+
+      export_to_google_sheets()
+
+    } else if (choice == "9") {
+
+      cat(
+        "\nTracker closed. Goodbye!\n"
+      )
+
+      break
+
+    } else {
+
+      cat(
+        "Invalid selection. Please choose 1 through 9.\n"
+      )
+    }
+  }
+}
+```
+
+# Running the Application
+
+The interactive menu is intentionally not started automatically when this RMarkdown document is rendered.
+
+After running the code chunks in RStudio, start the application from the Console with:
+
+```r
+run_tracker()
+```
+
+# Data Privacy
+
+The tracker stores calorie and body-weight records locally in the `data` directory.
+
+For a public GitHub repository, these personal CSV files should be excluded using `.gitignore`.
+
+# Future Development
+
+Potential future improvements include:
+
+- Protein, carbohydrate, and fat tracking
+- Daily calorie and macronutrient goals
+- Weekly and monthly summaries
+- Rolling weight averages
+- Additional nutrition analytics
+- Database-backed storage
+- Interactive dashboard
+- Web or mobile interface
+- Cloud deployment
